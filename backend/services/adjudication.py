@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # ==================================================
 
 # Financial Limits
-# PER_CLAIM_LIMIT = 5000
+PER_CLAIM_LIMIT = 7000
 MIN_CLAIM_AMOUNT = 500
 COPAY_PERCENTAGE = 10
 HIGH_VALUE_THRESHOLD = 25000
