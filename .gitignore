@@ -22,3 +22,15 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Next.js build
+frontend/.next/
+
+# Local env files
+frontend/.env.local
+
+# Uploaded test PDFs
+backend/uploads/
+
+# Next.js cache
+frontend/tsconfig.tsbuildinfo
