@@ -8,52 +8,7 @@ This document outlines the architecture, APIs, decision logic, and assumptions f
 
 The system follows a modern decoupled Client-Server architecture utilizing a React-based Frontend and a FastAPI Backend powered by an LLM extraction engine and MongoDB.
 
-```mermaid
-graph TD
-    %% Frontend Layer
-    subgraph Frontend ["Frontend (Next.js and React)"]
-        UI["User Interface / Dashboard"]
-        API_Client["Axios API Client"]
-        UI --> API_Client
-    end
-
-    %% Backend Layer
-    subgraph Backend ["Backend (FastAPI)"]
-        Router["API Routers"]
-        UploadRoute["Upload / Extraction Route"]
-        ClaimRoute["Claim Adjudication Route"]
-        ProviderRoute["Provider Management Route"]
-        
-        ExtractionService["Extraction Service"]
-        RulesEngine["Rules Engine / Adjudication Service"]
-        
-        API_Client -->|HTTP REST| Router
-        Router --> UploadRoute
-        Router --> ClaimRoute
-        Router --> ProviderRoute
-        
-        UploadRoute --> ExtractionService
-        ClaimRoute --> RulesEngine
-    end
-
-    %% External Services
-    subgraph External [External Services]
-        LLM["Groq API / Llama 3.3 70B"]
-    end
-    ExtractionService -->|Prompting| LLM
-
-    %% Database Layer
-    subgraph Database [MongoDB]
-        DB_Claims[(Claims Collection)]
-        DB_Members[(Members Collection)]
-        DB_Policies[(Policies Collection)]
-        DB_Providers[(Providers Collection)]
-    end
-
-    UploadRoute --> Database
-    RulesEngine --> Database
-    ProviderRoute --> Database
-```
+![Architecture Diagram](screenshots/architecture.png)
 
 ---
 
@@ -92,43 +47,7 @@ The backend is built with FastAPI and runs on port `8000`.
 
 The Adjudication Service (`AdjudicationService.adjudicate_claim`) processes claims through a strict, multi-stage priority rules engine.
 
-```mermaid
-flowchart TD
-    Start["Receive Claim Data"] --> ValidateDocs["Validate Document Completeness & OCR Confidence"]
-    
-    ValidateDocs -->|"Low Completeness / Missing Docs"| ManualReview1["Status: MANUAL REVIEW"]
-    ValidateDocs -->|"Docs Valid"| ValidateMember["Validate Member & Policy Status"]
-    
-    ValidateMember -->|"Member Not Found / Inactive Policy"| Reject1["Status: REJECTED"]
-    ValidateMember -->|"Member & Policy Active"| ValidateProvider["Validate Provider"]
-    
-    ValidateProvider -->|"Provider Blacklisted"| Reject2["Status: REJECTED"]
-    ValidateProvider -->|"Provider Valid"| ValidateRules["Validate Business Rules"]
-    
-    ValidateRules -->|"Waiting Period Not Met"| Reject3["Status: REJECTED"]
-    ValidateRules -->|"Date Mismatch > 30 Days"| Reject4["Status: REJECTED"]
-    ValidateRules -->|"Excessive Same-Day Claims"| ManualReview2["Status: MANUAL REVIEW"]
-    ValidateRules -->|"Rules Passed"| CalcFinancials["Calculate Financials"]
-    
-    CalcFinancials -->|"Apply Co-Pay 10%"| ApplySubLimits["Apply Policy Sub-limits"]
-    ApplySubLimits --> CheckAnnualLimit{"Exceeds Annual Limit?"}
-    
-    CheckAnnualLimit -->|"Yes"| Reject5["Status: REJECTED"]
-    CheckAnnualLimit -->|"No"| CheckSubLimit{"Amount Capped by Sub-limit?"}
-    
-    CheckSubLimit -->|"Yes"| Partial["Status: PARTIAL APPROVAL"]
-    CheckSubLimit -->|"No"| Approved["Status: APPROVED"]
-    
-    ManualReview1 --> End["Log Audit Trail & Return Decision"]
-    ManualReview2 --> End
-    Reject1 --> End
-    Reject2 --> End
-    Reject3 --> End
-    Reject4 --> End
-    Reject5 --> End
-    Partial --> End
-    Approved --> End
-```
+![Decision Logic Flowchart](screenshots/flowchart.png)
 
 ---
 
