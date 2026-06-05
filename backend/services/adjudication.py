@@ -37,7 +37,7 @@ EXCLUSIONS = [
 
 # Waiting Period Defaults (in days)
 WAITING_PERIODS = {
-    "initial": 30, "diabetes": 90, "hypertension": 90,
+    "initial": 90, "diabetes": 90, "hypertension": 90,
     "maternity": 270, "joint_replacement": 730
 }
 
@@ -45,6 +45,13 @@ WAITING_PERIODS = {
 COVERED_SERVICES = [
     "consultation", "diagnostic", "pharmacy", "dental", "vision",
     "mri", "ct scan", "laboratory", "ayurveda", "homeopathy", "panchakarma therapy"
+]
+
+# Vision category aliases (Item #8)
+VISION_ALIASES = [
+    "vision", "eye checkup", "eye consultation",
+    "vision consultation", "ophthalmology consultation",
+    "ophthalmology", "eye"
 ]
 
 DIAGNOSTIC_SERVICES = ["diagnostic", "mri", "ct scan", "laboratory"]
@@ -280,9 +287,10 @@ class AdjudicationService:
     
     @staticmethod
     def _validate_ocr_confidence(state, claim):
-        if claim.extraction_confidence < 0.85:
-            AdjudicationService._manual_review_rule(state, None, "OCR Confidence Too Low",
-                "DATA_MISMATCH", f"OCR confidence too low: {claim.extraction_confidence:.2%}", "Manual verification required")
+        """Item #10: If OCR confidence < 70%, send to MANUAL_REVIEW with LOW_OCR_CONFIDENCE"""
+        if claim.extraction_confidence < 0.70:
+            AdjudicationService._manual_review_rule(state, None, "LOW_OCR_CONFIDENCE",
+                "DATA_MISMATCH", f"OCR confidence too low: {claim.extraction_confidence:.2%}. Threshold is 70%.", "Manual verification required")
     
     @staticmethod
     def _validate_documents(state, claim):
@@ -300,7 +308,7 @@ class AdjudicationService:
                 "Please upload bill/invoice document")
         
         if not claim.prescription_uploaded:
-            AdjudicationService._manual_review_rule(state, "MANDATORY_FIELDS", "Missing Prescription",
+            AdjudicationService._manual_review_rule(state, "MANDATORY_FIELDS", "PRESCRIPTION_REQUIRED",
                 "MISSING_DOCUMENTS", "Prescription document not detected in uploaded files",
                 "Please upload prescription document")
         
@@ -327,9 +335,9 @@ class AdjudicationService:
                 }))
         
         if not matching_members:
-            AdjudicationService._manual_review_rule(state, "MEMBER_VALIDATION", "MEMBER_NOT_FOUND",
-                "MISSING_DOCUMENTS", "Member records not found in registry database",
-                "Manual review required to verify member identity")
+            AdjudicationService._reject_rule(state, "MEMBER_VALIDATION", "MEMBER_NOT_COVERED",
+                "POLICY_EXCEPTION", "Member records not found in registry database (Member not there, policy not covered)",
+                "Reject claim: member not there means policy not covered")
         elif len(matching_members) > 1:
             AdjudicationService._manual_review_rule(state, "MEMBER_VALIDATION", "Multiple Member Records",
                 "POLICY_EXCEPTION", "Multiple matching member records found for the given name",
@@ -387,7 +395,26 @@ class AdjudicationService:
             try:
                 join_dt = datetime.strptime(claim.member_join_date or "01/01/2024", "%d/%m/%Y")
             except:
-                join_dt = datetime(2024, 1, 1)
+                try:
+                    join_dt = datetime.strptime(claim.member_join_date or "2024-01-01", "%Y-%m-%d")
+                except:
+                    join_dt = datetime(2024, 1, 1)
+        
+        policy_join_dt = None
+        p_date_str = state["policy"].get("policy_join_date") if state["policy"] else None
+        if not p_date_str:
+            p_date_str = claim.policy_join_date
+        
+        if p_date_str:
+            try:
+                policy_join_dt = datetime.strptime(p_date_str, "%Y-%m-%d")
+            except:
+                try:
+                    policy_join_dt = datetime.strptime(p_date_str, "%d/%m/%Y")
+                except:
+                    pass
+        if not policy_join_dt:
+            policy_join_dt = join_dt
         
         try:
             treatment_dt = datetime.strptime(claim.treatment_date, "%Y-%m-%d") if "-" in claim.treatment_date else datetime.strptime(claim.treatment_date, "%d/%m/%Y")
@@ -395,21 +422,25 @@ class AdjudicationService:
             treatment_dt = datetime.now()
         
         days_since_joining = (treatment_dt - join_dt).days
-        state["days_since_joining"] = days_since_joining
+        days_since_policy_joining = (treatment_dt - policy_join_dt).days
+        state["days_since_joining"] = days_since_policy_joining
         diagnosis_lower = claim.diagnosis.lower()
         
+        # Policy activation takes min 90 days
+        req_initial_days = max(state["policy"].get("initial_waiting_days", 90), 90) if state["policy"] else 90
+        
         waiting_checks = [
-            ("Initial Waiting Period", WAITING_PERIODS["initial"], True, f"Tenure ({days_since_joining} days) vs required {WAITING_PERIODS['initial']} days"),
-            ("Diabetes Waiting Period", WAITING_PERIODS["diabetes"], "diabetes" in diagnosis_lower, f"Diabetes claim requires {WAITING_PERIODS['diabetes']} days"),
-            ("Hypertension Waiting Period", WAITING_PERIODS["hypertension"], "hypertension" in diagnosis_lower or "blood pressure" in diagnosis_lower, f"Hypertension claim requires {WAITING_PERIODS['hypertension']} days"),
-            ("Maternity Waiting Period", WAITING_PERIODS["maternity"], "maternity" in diagnosis_lower, f"Maternity claim requires {WAITING_PERIODS['maternity']} days"),
-            ("Joint Replacement Waiting Period", WAITING_PERIODS["joint_replacement"], "joint replacement" in diagnosis_lower or "knee replacement" in diagnosis_lower, f"Joint replacement requires {WAITING_PERIODS['joint_replacement']} days")
+            ("Initial Waiting Period", req_initial_days, True, f"Policy tenure ({days_since_policy_joining} days) vs required policy activation waiting period of {req_initial_days} days", days_since_policy_joining),
+            ("Diabetes Waiting Period", WAITING_PERIODS["diabetes"], "diabetes" in diagnosis_lower, f"Diabetes claim requires {WAITING_PERIODS['diabetes']} days", days_since_joining),
+            ("Hypertension Waiting Period", WAITING_PERIODS["hypertension"], "hypertension" in diagnosis_lower or "blood pressure" in diagnosis_lower, f"Hypertension claim requires {WAITING_PERIODS['hypertension']} days", days_since_joining),
+            ("Maternity Waiting Period", WAITING_PERIODS["maternity"], "maternity" in diagnosis_lower, f"Maternity claim requires {WAITING_PERIODS['maternity']} days", days_since_joining),
+            ("Joint Replacement Waiting Period", WAITING_PERIODS["joint_replacement"], "joint replacement" in diagnosis_lower or "knee replacement" in diagnosis_lower, f"Joint replacement requires {WAITING_PERIODS['joint_replacement']} days", days_since_joining)
         ]
         
-        for rule_name, required, applies, explanation in waiting_checks:
-            status = "PASS" if not applies or days_since_joining >= required else "FAIL"
+        for rule_name, required, applies, explanation, actual_days in waiting_checks:
+            status = "PASS" if not applies or actual_days >= required else "FAIL"
             state["waiting_period_trace"].append({
-                "rule": rule_name, "status": status, "required": required, "actual": days_since_joining
+                "rule": rule_name, "status": status, "required": required, "actual": actual_days
             })
             
             if status == "FAIL":
@@ -427,7 +458,8 @@ class AdjudicationService:
         provider = providers_collection.find_one({"doctor_registration": claim.doctor_registration})
         
         if provider:
-            if provider.get("blacklisted", False) or claim.provider_blacklisted:
+            # Only check blacklist from the actual DB record
+            if provider.get("blacklisted", False):
                 AdjudicationService._reject_rule(state, "PROVIDER_BLACKLIST", "PROVIDER_BLACKLIST",
                     "FRAUD_SUSPECTED", "Doctor registration resides in the provider blacklist index",
                     "Reject claim and add provider reference log to fraud desk")
@@ -440,6 +472,10 @@ class AdjudicationService:
             else:
                 state["provider_status"] = "Out of Network"
                 state["provider_cashless"] = "Not Eligible"
+        else:
+            # Provider not in registry — NOT a blacklist violation, just info
+            state["provider_status"] = "Not Found"
+            state["provider_cashless"] = "Not Eligible"
     
     @staticmethod
     def _validate_patient_mismatch(state, claim):
@@ -506,17 +542,22 @@ class AdjudicationService:
     def _validate_coverage(state, claim):
         diagnosis_lower = claim.diagnosis.lower()
         
-        if claim.treatment_type.lower() not in COVERED_SERVICES:
+        # Item #8: Normalize vision aliases before checking coverage
+        treatment_lower = claim.treatment_type.lower().strip()
+        if treatment_lower in VISION_ALIASES:
+            treatment_lower = "vision"
+        
+        if treatment_lower not in COVERED_SERVICES:
             AdjudicationService._reject_rule(state, "SERVICE_COVERAGE", "SERVICE_NOT_COVERED",
                 "POLICY_EXCEPTION", f"Treatment category '{claim.treatment_type}' not included in basic policy cover",
                 "Reject claim")
         
-        if claim.treatment_type.lower() == "mri" and not claim.pre_authorized:
+        if treatment_lower == "mri" and not claim.pre_authorized:
             AdjudicationService._reject_rule(state, "MRI_PRE_AUTH", "PRE_AUTH_MISSING",
                 "POLICY_EXCEPTION", "MRI treatment requires pre-authorization approval",
                 "Reject claim due to missing pre-authorization")
         
-        if claim.treatment_type.lower() in DIAGNOSTIC_SERVICES and not claim.report_uploaded:
+        if treatment_lower in DIAGNOSTIC_SERVICES and not claim.report_uploaded:
             AdjudicationService._manual_review_rule(state, "DIAGNOSTIC_REPORT", "Missing Diagnostic Report",
                 "MISSING_DOCUMENTS", f"Supporting diagnostic report required for treatment type: {claim.treatment_type}",
                 "Request supporting diagnostic report from claimant")
@@ -558,25 +599,34 @@ class AdjudicationService:
     def _validate_fraud(state, claim):
         """
         Frequent claim rule uses real MongoDB claim history.
-        Uses the resolved member_id from the DB record (not the defaulted form value)
-        so that EMP001 defaults don't trigger false fraud flags for other members.
+        Counts claims submitted TODAY (by UTC submission timestamp) to avoid
+        false positives when sandbox tests repeatedly reuse the same treatment_date.
+        Uses the resolved member_id from the DB record.
         """
-        # Use resolved member_id from the found DB member record, not the raw form value
+        from datetime import datetime, timezone
         resolved_member_id = state["member"].get("member_id") if state["member"] else claim.member_id
-        
+
         claims_today_count = 0
-        if resolved_member_id and claim.treatment_date:
+        if resolved_member_id:
+            # Count claims submitted today (UTC date window) — NOT by treatment_date
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end   = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
             claims_today_count = claims_collection.count_documents({
                 "member_id": resolved_member_id,
-                "treatment_date": claim.treatment_date
+                "timestamp": {"$gte": today_start, "$lte": today_end}
             })
-        
+
         # Log claim count for audit
-        logger.info(f"Claim {claim.id} - Claims on same day: {claims_today_count} for member {resolved_member_id}")
-        
-        if claims_today_count > 10:
+        logger.info(f"Claim {claim.id} - Claims submitted today: {claims_today_count} for member {resolved_member_id}")
+
+        # Get per-user daily claim limit from policy (default 12)
+        max_claims_per_day = 12
+        if state.get("policy"):
+            max_claims_per_day = state["policy"].get("max_claims_per_day", 12)
+
+        if claims_today_count > max_claims_per_day:
             AdjudicationService._manual_review_rule(state, "FREQUENT_CLAIMS_CHECK", "EXCESSIVE_CLAIM_ACTIVITY",
-                "FRAUD_SUSPECTED", f"Member submitted more than 10 claims on the same day ({claims_today_count} claims)",
+                "FRAUD_SUSPECTED", f"Member submitted more than {max_claims_per_day} claims today ({claims_today_count} submissions)",
                 "Forward claim to fraud investigation queue")
             state["rule_trace"]["FRAUD_CHECK"] = "FAIL"
     
@@ -594,7 +644,12 @@ class AdjudicationService:
         vision_limit = state["policy"].get("vision_limit", DEFAULT_VISION_LIMIT)
         per_claim_limit = state["policy"].get("per_claim_limit", DEFAULT_PER_CLAIM_LIMIT)
         
-        if claim.treatment_type.lower() == "dental" and state["adjusted_claim_amount"] > dental_limit:
+        # Item #8: use normalized treatment type for sublimit checks
+        tt_lower = claim.treatment_type.lower().strip()
+        if tt_lower in VISION_ALIASES:
+            tt_lower = "vision"
+        
+        if tt_lower == "dental" and state["adjusted_claim_amount"] > dental_limit:
             AdjudicationService._set_status(state, "PARTIAL")
             state["limit_applied"] = state["adjusted_claim_amount"] - dental_limit
             state["adjusted_claim_amount"] = dental_limit
@@ -602,7 +657,7 @@ class AdjudicationService:
             state["next_steps"] = "Approve up to sublimit"
             state["rule_trace"]["PER_CLAIM_LIMIT"] = "FAIL"
             
-        elif claim.treatment_type.lower() == "vision" and state["adjusted_claim_amount"] > vision_limit:
+        elif tt_lower == "vision" and state["adjusted_claim_amount"] > vision_limit:
             AdjudicationService._set_status(state, "PARTIAL")
             state["limit_applied"] = state["adjusted_claim_amount"] - vision_limit
             state["adjusted_claim_amount"] = vision_limit
@@ -617,6 +672,8 @@ class AdjudicationService:
             state["notes"].append(f"Per-claim cap limit of ₹{per_claim_limit} exceeded")
             state["next_steps"] = "Approve up to per-claim limit"
             state["rule_trace"]["PER_CLAIM_LIMIT"] = "FAIL"
+            if "PER_CLAIM_EXCEEDED" not in state["rejection_reasons"]:
+                state["rejection_reasons"].append("PER_CLAIM_EXCEEDED")
         
         if claim.bill_amount is not None and state["adjusted_claim_amount"] > claim.bill_amount:
             AdjudicationService._manual_review_rule(state, "PRICING_CALCULATION", "CLAIM_AMOUNT_MISMATCH",

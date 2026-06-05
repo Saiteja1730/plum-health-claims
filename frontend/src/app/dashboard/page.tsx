@@ -73,17 +73,79 @@ export default function DashboardPage() {
     return { label: key, count: val, pct };
   }).sort((a, b) => b.count - a.count);
 
+  const fraud = stats.fraud_detection || {
+    blacklisted_hits: 0,
+    duplicate_hits: 0,
+    patient_mismatch_hits: 0,
+    date_mismatch_hits: 0,
+  };
+
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Operations Control Center</h1>
-        <p className="text-sm text-slate-500 mt-1">Real-time KPIs, rule violations ratio, and payouts analytics of claim records.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Operations Control Center</h1>
+          <p className="text-sm text-slate-500 mt-1">Real-time KPIs, rule violations ratio, and payouts analytics of claim records.</p>
+        </div>
+        <span className="bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-bold px-3 py-1.5 rounded-lg font-mono">
+          {stats.total_claims || 0} claims processed
+        </span>
+      </div>
+
+      {/* Fraud Detection Section (Item #5) */}
+      <div className="bg-gradient-to-r from-rose-50/50 to-orange-50/30 border border-rose-200/60 p-6 rounded-2xl shadow-xs space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+            <svg className="w-5 h-5 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>Real-time Fraud & Policy Anomaly Analytics</span>
+          </h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">Automated detection checks matching real database entries and patient patterns</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col justify-between shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Blacklisted Providers</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-black font-mono text-rose-600">{fraud.blacklisted_hits}</span>
+              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded font-mono">Hits</span>
+            </div>
+            <p className="text-[9px] text-slate-400 mt-2 font-normal">Claims involving blacklisted doctor registrations.</p>
+          </div>
+
+          <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col justify-between shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Duplicate Claims</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-black font-mono text-rose-600">{fraud.duplicate_hits}</span>
+              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded font-mono">Hits</span>
+            </div>
+            <p className="text-[9px] text-slate-400 mt-2 font-normal">Same member, treatment date, and amount combination.</p>
+          </div>
+
+          <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col justify-between shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Patient Mismatches</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-black font-mono text-rose-600">{fraud.patient_mismatch_hits}</span>
+              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded font-mono">Hits</span>
+            </div>
+            <p className="text-[9px] text-slate-400 mt-2 font-normal">OCR patient name doesn&apos;t match member database name.</p>
+          </div>
+
+          <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col justify-between shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date Mismatches</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-black font-mono text-rose-600">{fraud.date_mismatch_hits}</span>
+              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded font-mono">Hits</span>
+            </div>
+            <p className="text-[9px] text-slate-400 mt-2 font-normal">Future dates or treatment exceeding upload threshold.</p>
+          </div>
+        </div>
       </div>
 
       {/* Grid of KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
+        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between h-28">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Claims Processed</p>
           <p className="text-2xl font-extrabold text-slate-900 font-mono mt-1">{stats.total_claims}</p>
           <span className="text-[9px] text-teal-600 font-bold bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-md self-start">
@@ -91,7 +153,7 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
+        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between h-28">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Approved Payouts</p>
           <p className="text-2xl font-extrabold text-emerald-600 font-mono mt-1">₹{totalApprovedAmount.toLocaleString("en-IN")}</p>
           <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md self-start">
@@ -99,7 +161,7 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
+        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between h-28">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Manual Audits Referral</p>
           <p className="text-2xl font-extrabold text-orange-600 font-mono mt-1">{stats.manual_review}</p>
           <span className="text-[9px] text-orange-600 font-bold bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-md self-start">
@@ -107,7 +169,7 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
+        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between h-28">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Rejected Value</p>
           <p className="text-2xl font-extrabold text-rose-600 font-mono mt-1">₹{totalRejectedAmount.toLocaleString("en-IN")}</p>
           <span className="text-[9px] text-rose-600 font-bold bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md self-start">
@@ -115,7 +177,7 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
+        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between h-28">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Waiting Period Rejections</p>
           <p className="text-2xl font-extrabold text-amber-600 font-mono mt-1">{stats.waiting_period_rejections || 0}</p>
           <span className="text-[9px] text-amber-600 font-bold bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md self-start">
@@ -123,11 +185,11 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
+        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col justify-between h-28">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Excessive Activity Flags</p>
           <p className="text-2xl font-extrabold text-rose-700 font-mono mt-1">{stats.claims_flaged_excessive_activity || 0}</p>
           <span className="text-[9px] text-rose-700 font-bold bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md self-start">
-            &gt; 4 claims / day
+            Unique members &gt; 12 claims / day
           </span>
         </div>
       </div>
@@ -141,7 +203,7 @@ export default function DashboardPage() {
               FRAUD REVIEW REQUIRED
             </span>
           </h3>
-          <p className="text-[10px] text-slate-400 mt-0.5">Members flagged for excessive claim activity (&gt; 4 submissions within a single calendar day)</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Members flagged for excessive claim activity (&gt; 12 submissions within a single calendar day)</p>
         </div>
 
         <div className="overflow-x-auto text-[11px]">
@@ -315,7 +377,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <span className="font-semibold block text-slate-400">Average Extraction Confidence</span>
-            <span className="text-lg font-extrabold text-teal-600 font-mono">94%</span>
+            <span className="text-lg font-extrabold text-teal-600 font-mono">{stats.avg_confidence || 94}%</span>
           </div>
         </div>
       </div>

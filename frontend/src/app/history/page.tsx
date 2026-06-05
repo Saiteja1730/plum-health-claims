@@ -21,6 +21,7 @@ export default function HistoryPage() {
   useEffect(() => {
     getHistory()
       .then((data) => {
+        // Backend returns claims pre-sorted descending by created_at (Item #3)
         const claimsList = data.claims || [];
         setClaims(claimsList);
         setFilteredClaims(claimsList);
@@ -43,6 +44,8 @@ export default function HistoryPage() {
       const q = search.toLowerCase();
       result = result.filter(
         (c) =>
+          (c.claim_id && c.claim_id.toLowerCase().includes(q)) ||
+          (c.member_id && c.member_id.toLowerCase().includes(q)) ||
           (c.member_name && c.member_name.toLowerCase().includes(q)) ||
           (c.diagnosis && c.diagnosis.toLowerCase().includes(q)) ||
           (c.treatment_type && c.treatment_type.toLowerCase().includes(q))
@@ -67,7 +70,7 @@ export default function HistoryPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Claims Audit Registry</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Claims History</h1>
         <ErrorMessage message={error} />
       </div>
     );
@@ -91,9 +94,16 @@ export default function HistoryPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Claims Audit Registry</h1>
-        <p className="text-sm text-slate-500 mt-1">Audit log of all OPD claim outcomes, doctor approvals, and rejection rules triggered.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Claims History</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Business registry of all adjudicated claims. For technical details or operators logs, visit the Audit Trail.
+          </p>
+        </div>
+        <span className="bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-bold px-3 py-1.5 rounded-lg font-mono">
+          {filteredClaims.length} of {claims.length} claims
+        </span>
       </div>
 
       {/* Filter Toolbar */}
@@ -101,7 +111,7 @@ export default function HistoryPage() {
         <div className="relative flex-1 max-w-md">
           <input
             type="text"
-            placeholder="Search patient, diagnosis or category..."
+            placeholder="Search claim ID, member ID, name, diagnosis..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-800 focus:outline-none focus:border-teal-500/50 placeholder-slate-400"
@@ -137,33 +147,34 @@ export default function HistoryPage() {
                 <th className="p-4.5 pl-6">Claim ID</th>
                 <th className="p-4.5">Member Name</th>
                 <th className="p-4.5">Diagnosis</th>
-                <th className="p-4.5">Invoice Amount</th>
-                <th className="p-4.5">Payable Approved</th>
+                <th className="p-4.5">Claimed Amount</th>
+                <th className="p-4.5">Approved Amount</th>
                 <th className="p-4.5">Status</th>
-                <th className="p-4.5">Triggered Rule</th>
+                <th className="p-4.5 font-bold">Timestamp</th>
                 <th className="p-4.5 pr-6 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-semibold">
               {filteredClaims.length > 0 ? (
                 filteredClaims.map((claim, idx) => {
-                  const claimId = `CLM-00${idx + 1}`;
+                  const claimId = claim.claim_id || `CLM-00${idx + 1}`;
                   return (
                     <tr key={idx} className="hover:bg-slate-50/50 transition-colors text-slate-700">
                       <td className="p-4.5 pl-6 font-mono font-bold text-slate-400">{claimId}</td>
-                      <td className="p-4.5 text-slate-900 font-bold">{claim.member_name}</td>
+                      <td className="p-4.5 text-slate-900 font-bold">
+                        <div>{claim.member_name}</div>
+                        <span className="text-[9px] text-slate-400 font-mono font-normal">{claim.member_id}</span>
+                      </td>
                       <td className="p-4.5">{claim.diagnosis || "General checkup"}</td>
-                      <td className="p-4.5 font-mono">₹{claim.claim_amount?.toFixed(2)}</td>
-                      <td className="p-4.5 font-mono text-teal-600">₹{claim.approved_amount?.toFixed(2)}</td>
+                      <td className="p-4.5 font-mono">₹{(claim.claim_amount || 0).toFixed(2)}</td>
+                      <td className="p-4.5 font-mono text-teal-600 font-bold">₹{(claim.approved_amount || 0).toFixed(2)}</td>
                       <td className="p-4.5">
-                        <span className={`px-2.5 py-1 rounded-full text-[9px] font-mono font-bold border ${getStatusBadgeClass(claim.decision)}`}>
-                          {claim.decision}
+                        <span className={`px-2.5 py-1 rounded-full text-[9px] font-mono font-bold border ${getStatusBadgeClass(claim.decision || "PENDING")}`}>
+                          {claim.decision || "PENDING"}
                         </span>
                       </td>
-                      <td className="p-4.5 font-mono text-rose-600">
-                        {claim.rejection_reasons && claim.rejection_reasons.length > 0
-                          ? claim.rejection_reasons[0]
-                          : "None"}
+                      <td className="p-4.5 text-slate-400 font-normal text-[10px]">
+                        {claim.created_at || claim.timestamp ? new Date(claim.created_at || claim.timestamp).toLocaleString("en-IN") : "—"}
                       </td>
                       <td className="p-4.5 pr-6 text-center">
                         <button
@@ -191,11 +202,11 @@ export default function HistoryPage() {
       {/* VIEW DETAILS MODAL */}
       {selectedClaim && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-xl p-6 space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full shadow-xl p-6 space-y-6">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Claim File Details ({selectedClaim.claimId})</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">Auditor file inspection report</p>
+                <h3 className="text-base font-bold text-slate-900">Claim Details ({selectedClaim.claimId})</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Business claim summary</p>
               </div>
               <button
                 onClick={() => setSelectedClaim(null)}
@@ -207,42 +218,39 @@ export default function HistoryPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs font-semibold text-slate-700">
-              <div className="space-y-1">
-                <span className="text-[9px] uppercase text-slate-400 block">Member Name</span>
+            <div className="space-y-4 text-xs font-semibold text-slate-700">
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-slate-400 font-normal">Member Name</span>
                 <span className="text-slate-900 font-bold">{selectedClaim.member_name}</span>
               </div>
-              <div className="space-y-1">
-                <span className="text-[9px] uppercase text-slate-400 block">Treatment Category</span>
-                <span className="text-slate-900 capitalize">{selectedClaim.treatment_type || "consultation"}</span>
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-slate-400 font-normal">Member ID</span>
+                <span className="text-slate-900 font-mono">{selectedClaim.member_id}</span>
               </div>
-              <div className="space-y-1">
-                <span className="text-[9px] uppercase text-slate-400 block">Invoice Total</span>
-                <span className="text-slate-900 font-mono">₹{selectedClaim.claim_amount?.toFixed(2)}</span>
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-slate-400 font-normal">Diagnosis</span>
+                <span className="text-slate-900">{selectedClaim.diagnosis || "General checkup"}</span>
               </div>
-              <div className="space-y-1">
-                <span className="text-[9px] uppercase text-slate-400 block">Approved Payable</span>
-                <span className="text-teal-600 font-mono font-bold">₹{selectedClaim.approved_amount?.toFixed(2)}</span>
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-slate-400 font-normal">Claimed Amount</span>
+                <span className="text-slate-900 font-mono">₹{(selectedClaim.claim_amount || 0).toFixed(2)}</span>
               </div>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-xl space-y-3 text-xs">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-bold">Adjudication Outcome</span>
-                <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold border ${getStatusBadgeClass(selectedClaim.decision)}`}>
-                  {selectedClaim.decision}
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-slate-400 font-normal">Approved Amount</span>
+                <span className="text-teal-600 font-mono font-bold">₹{(selectedClaim.approved_amount || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-slate-400 font-normal">Adjudication Status</span>
+                <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold border ${getStatusBadgeClass(selectedClaim.decision || "PENDING")}`}>
+                  {selectedClaim.decision || "PENDING"}
                 </span>
               </div>
-              {selectedClaim.rejection_reasons && selectedClaim.rejection_reasons.length > 0 && (
-                <div className="space-y-1">
-                  <span className="text-[9px] text-rose-600 uppercase font-bold tracking-wider">Triggered Rules</span>
-                  {selectedClaim.rejection_reasons.map((r: string, i: number) => (
-                    <div key={i} className="bg-rose-50 border border-rose-100 text-rose-700 p-2 rounded-lg font-mono text-[10px]">
-                      {r}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="flex justify-between py-1">
+                <span className="text-slate-400 font-normal">Timestamp</span>
+                <span className="text-slate-600 font-mono">
+                  {selectedClaim.created_at || selectedClaim.timestamp ? new Date(selectedClaim.created_at || selectedClaim.timestamp).toLocaleString("en-IN") : "—"}
+                </span>
+              </div>
             </div>
 
             <div className="border-t border-slate-100 pt-4 flex justify-end">
@@ -250,7 +258,7 @@ export default function HistoryPage() {
                 onClick={() => setSelectedClaim(null)}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs"
               >
-                Close Inspector
+                Close details
               </button>
             </div>
           </div>

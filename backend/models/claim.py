@@ -102,6 +102,8 @@ class Claim(BaseModel):
 
     annual_used: float = 0
 
+    policy_join_date: Optional[str] = None
+
     # -----------------------------
     # Internal Adjudication Flags
     # -----------------------------

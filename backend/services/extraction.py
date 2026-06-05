@@ -21,6 +21,7 @@ Return ONLY VALID JSON.
 Schema:
 
 {{
+    "member_id": "",
     "member_name": "",
     "document_patient_name": "",
     "member_age": null,
@@ -42,6 +43,7 @@ Schema:
     "confidence_score": 0.0,
     "medical_necessity_score": 0.0,
     "field_confidence": {{
+        "member_id": 0.0,
         "member_name": 0.0,
         "document_patient_name": 0.0,
         "member_age": 0.0,
@@ -73,6 +75,8 @@ Rules:
 
 - If laboratory findings or test results exist,
   assume report_present=true
+
+- Extract member ID if present (typically starts with EMP or similar format like EMP001)
 
 - Extract doctor registration if visible
 

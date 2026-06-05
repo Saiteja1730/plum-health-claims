@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { processClaim } from "../../services/api";
+import { processClaim, resetSandbox } from "../../services/api";
 
 interface TestCase {
   id: string;
   title: string;
   description: string;
   outcomeExpectation: string;
+  expectedDecision: string;
   payload: any;
 }
 
@@ -17,6 +18,7 @@ const TEST_CASES: TestCase[] = [
     title: "Approved (Clean Pass)",
     description: "Standard general consultation, valid registry numbers, documents present.",
     outcomeExpectation: "APPROVED (10% co-pay applied: ₹1,080 payable on ₹1,200)",
+    expectedDecision: "APPROVED",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -47,6 +49,7 @@ const TEST_CASES: TestCase[] = [
     title: "Rejected (Exclusions)",
     description: "Claim for bariatric weight loss therapy which is explicitly excluded from cover.",
     outcomeExpectation: "REJECTED (EXCLUDED_CONDITION rule trigger)",
+    expectedDecision: "REJECTED",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -74,15 +77,16 @@ const TEST_CASES: TestCase[] = [
   },
   {
     id: "partial",
-    title: "Partial (Co-pay Limit)",
-    description: "Invoice amount is ₹6,000, which exceeds the single claim threshold of ₹5,000.",
-    outcomeExpectation: "PARTIAL (Approved up to ₹5,000 max. ₹4,500 payable after 10% co-pay)",
+    title: "Partial (Per-Claim Limit)",
+    description: "Invoice amount is ₹10,000, which exceeds the per-claim limit of ₹7,000.",
+    outcomeExpectation: "PARTIAL (Approved up to ₹7,000 max. ₹6,300 payable after 10% co-pay)",
+    expectedDecision: "PARTIAL",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
       member_age: 30,
       treatment_date: "2026-06-01",
-      claim_amount: 6000,
+      claim_amount: 10000,
       diagnosis: "Acute Gastroenteritis",
       treatment_type: "consultation",
       doctor_name: "Dr. A. K. Sharma",
@@ -107,6 +111,7 @@ const TEST_CASES: TestCase[] = [
     title: "Manual Review",
     description: "High value claim exceeding the standard ₹25,000 high-value threshold.",
     outcomeExpectation: "MANUAL_REVIEW (Requires secondary human doctor verification)",
+    expectedDecision: "MANUAL_REVIEW",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -135,12 +140,13 @@ const TEST_CASES: TestCase[] = [
   {
     id: "waiting_period",
     title: "Waiting Period",
-    description: "Diagnosis for Diabetes within active policy waiting exclusions.",
-    outcomeExpectation: "REJECTED (WAITING_PERIOD rule trigger)",
+    description: "EMP005 Neha Sharma joined 2026-05-01 — only 31 days into policy, inside the 90-day diabetes exclusion window.",
+    outcomeExpectation: "REJECTED (WAITING_PERIOD rule trigger — diabetes wait not satisfied)",
+    expectedDecision: "REJECTED",
     payload: {
-      member_id: "EMP001",
-      member_name: "Rajesh Kumar",
-      member_age: 30,
+      member_id: "EMP005",
+      member_name: "Neha Sharma",
+      member_age: 27,
       treatment_date: "2026-06-01",
       claim_amount: 2200,
       diagnosis: "Chronic diabetes checkup",
@@ -151,7 +157,7 @@ const TEST_CASES: TestCase[] = [
       prescription_uploaded: true,
       bill_uploaded: true,
       report_uploaded: false,
-      document_patient_name: "Rajesh Kumar",
+      document_patient_name: "Neha Sharma",
       prescription_date: "01/06/2026",
       bill_date: "01/06/2026",
       pre_authorized: false,
@@ -167,6 +173,7 @@ const TEST_CASES: TestCase[] = [
     title: "Policy Inactive",
     description: "Submission for member EMP003 whose policy is currently inactive.",
     outcomeExpectation: "REJECTED (POLICY_INACTIVE rule trigger)",
+    expectedDecision: "REJECTED",
     payload: {
       member_id: "EMP003",
       member_name: "Amit Verma",
@@ -196,7 +203,8 @@ const TEST_CASES: TestCase[] = [
     id: "provider_blacklist",
     title: "Provider Blacklist",
     description: "Submitted physician registration matches blacklisted database keys.",
-    outcomeExpectation: "REJECTED (PROVIDER_BLACKLIST violation)",
+    outcomeExpectation: "REJECTED (PROVIDER_BLACKLIST / DOCTOR_REG_INVALID violation)",
+    expectedDecision: "REJECTED",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -225,8 +233,9 @@ const TEST_CASES: TestCase[] = [
   {
     id: "date_mismatch",
     title: "Date Mismatch",
-    description: "Invoice bill date differs from prescription date by more than 7 days.",
+    description: "Invoice bill date differs from prescription date by more than 30 days.",
     outcomeExpectation: "REJECTED (DATE_MISMATCH rule trigger)",
+    expectedDecision: "REJECTED",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -242,8 +251,8 @@ const TEST_CASES: TestCase[] = [
       bill_uploaded: true,
       report_uploaded: false,
       document_patient_name: "Rajesh Kumar",
-      prescription_date: "01/06/2026",
-      bill_date: "20/06/2026",
+      prescription_date: "01/04/2026",
+      bill_date: "10/06/2026",
       pre_authorized: false,
       cashless_request: false,
       previous_claims_same_day: 0,
@@ -257,6 +266,7 @@ const TEST_CASES: TestCase[] = [
     title: "Patient Mismatch",
     description: "Patient name on the medical document does not match the insurance records.",
     outcomeExpectation: "REJECTED (PATIENT_MISMATCH rule trigger)",
+    expectedDecision: "REJECTED",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -286,7 +296,8 @@ const TEST_CASES: TestCase[] = [
     id: "dental_limit",
     title: "Dental Limit",
     description: "Dental treatment invoice (₹5,500) exceeds the dental limit of ₹5,000.",
-    outcomeExpectation: "REJECTED (DENTAL_SUB_LIMIT rule trigger)",
+    outcomeExpectation: "PARTIAL (Dental sublimit caps amount to ₹5,000)",
+    expectedDecision: "PARTIAL",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -316,7 +327,8 @@ const TEST_CASES: TestCase[] = [
     id: "vision_limit",
     title: "Vision Limit",
     description: "Vision treatment invoice (₹4,500) exceeds the vision limit of ₹4,000.",
-    outcomeExpectation: "REJECTED (VISION_SUB_LIMIT rule trigger)",
+    outcomeExpectation: "PARTIAL (Vision sublimit caps amount to ₹4,000)",
+    expectedDecision: "PARTIAL",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -345,8 +357,9 @@ const TEST_CASES: TestCase[] = [
   {
     id: "fraud_claim",
     title: "Fraud Claim",
-    description: "Multiple claims logged for the same patient on the same day (4 claims).",
-    outcomeExpectation: "MANUAL_REVIEW (Triggered by high daily claims count)",
+    description: "Engine checks real DB history for same-day claims. Multiple runs will trigger fraud flag (>10 claims).",
+    outcomeExpectation: "APPROVED on first run; MANUAL_REVIEW after 10+ same-day claims in DB",
+    expectedDecision: "APPROVED",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -377,6 +390,7 @@ const TEST_CASES: TestCase[] = [
     title: "High Value Claim",
     description: "Claims value ₹30,000 exceeds high value audit threshold ₹25,000.",
     outcomeExpectation: "MANUAL_REVIEW (Exceeds operations threshold)",
+    expectedDecision: "MANUAL_REVIEW",
     payload: {
       member_id: "EMP001",
       member_name: "Rajesh Kumar",
@@ -409,12 +423,15 @@ export default function SandboxPage() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   const runTest = async (testCase: TestCase) => {
     setSelectedCase(testCase);
     setLoading(true);
     setResult(null);
     setError(null);
+    setResetMessage(null);
     try {
       const adjudication = await processClaim(testCase.payload);
       setResult(adjudication);
@@ -426,13 +443,51 @@ export default function SandboxPage() {
     }
   };
 
+  const handleReset = async () => {
+    if (!confirm("Reset all test claims? This will delete all claims from the database.")) return;
+    setResetting(true);
+    setResetMessage(null);
+    try {
+      const res = await resetSandbox();
+      setResetMessage(res.message || "Sandbox reset successfully.");
+      setResult(null);
+      setSelectedCase(null);
+    } catch (err) {
+      setResetMessage("Failed to reset sandbox.");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const getMatchStatus = () => {
+    if (!result || !selectedCase) return null;
+    const actual = result.decision;
+    const expected = selectedCase.expectedDecision;
+    return actual === expected;
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Claims Adjudication Sandbox</h1>
-        <p className="text-sm text-slate-500 mt-1">Select and run simulation cases to test the insurance rules engine limits, exceptions, and coverage ratios.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Claims Adjudication Sandbox</h1>
+          <p className="text-sm text-slate-500 mt-1">Select and run simulation cases to test the insurance rules engine limits, exceptions, and coverage ratios.</p>
+        </div>
+        <button
+          onClick={handleReset}
+          disabled={resetting}
+          className="px-4 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition disabled:opacity-50"
+        >
+          {resetting ? "Resetting..." : "🔄 Reset Sandbox"}
+        </button>
       </div>
+
+      {resetMessage && (
+        <div className={`p-3 rounded-xl text-xs font-semibold border ${resetMessage.includes("Failed") ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+          {resetMessage}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left List of test cases */}
@@ -452,7 +507,7 @@ export default function SandboxPage() {
                 <div className="font-bold text-slate-900">{tc.title}</div>
                 <p className="text-[10px] text-slate-500 mt-0.5">{tc.description}</p>
                 <div className="text-[9px] text-teal-700 font-bold mt-1.5 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded inline-block">
-                  Expectation: {tc.outcomeExpectation}
+                  Expected: {tc.expectedDecision}
                 </div>
               </button>
             ))}
@@ -489,6 +544,24 @@ export default function SandboxPage() {
 
           {!loading && result && (
             <div className="space-y-6">
+              {/* Pass/Fail banner */}
+              {selectedCase && (
+                <div className={`p-3 rounded-xl text-xs font-bold border flex items-center gap-2 ${
+                  getMatchStatus()
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border-rose-200"
+                }`}>
+                  <span className="text-lg">{getMatchStatus() ? "✓" : "✗"}</span>
+                  <div>
+                    <div>{getMatchStatus() ? "PASS — Expected matches Actual" : "MISMATCH — Expected ≠ Actual"}</div>
+                    <div className="font-normal mt-0.5">
+                      Expected: <span className="font-bold">{selectedCase.expectedDecision}</span> | 
+                      Actual: <span className="font-bold">{result.decision}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Outcome status banner */}
               <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div>
@@ -500,6 +573,44 @@ export default function SandboxPage() {
                   <div className="text-lg font-extrabold text-teal-600 font-mono mt-0.5">₹{result.approved_amount.toFixed(2)}</div>
                 </div>
               </div>
+
+              {/* Claim ID and Timestamp */}
+              {result.claim_id && (
+                <div className="flex gap-4 text-[10px] font-mono text-slate-500">
+                  <span>Claim ID: <span className="font-bold text-slate-700">{result.claim_id}</span></span>
+                  {result.timestamp && (
+                    <span>Timestamp: <span className="font-bold text-slate-700">{new Date(result.timestamp).toLocaleString("en-IN")}</span></span>
+                  )}
+                </div>
+              )}
+
+              {/* Passed Rules */}
+              {result.passed_rules && result.passed_rules.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Passed Rules</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {result.passed_rules.map((rule: string, idx: number) => (
+                      <span key={idx} className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono">
+                        ✓ {rule}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Failed Rules */}
+              {result.failed_rules && result.failed_rules.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-rose-600 uppercase tracking-wider">Failed Rules</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {result.failed_rules.map((rule: string, idx: number) => (
+                      <span key={idx} className="bg-rose-50 text-rose-700 border border-rose-100 px-1.5 py-0.5 rounded text-[9px] font-bold font-mono">
+                        ✗ {rule}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Rules triggered */}
               {result.rejection_reasons && result.rejection_reasons.length > 0 ? (

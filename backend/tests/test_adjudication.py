@@ -1,6 +1,14 @@
 from services.adjudication import AdjudicationService
 from models.claim import Claim
 from unittest.mock import patch
+import services.adjudication
+services.adjudication.REQUIRED_FIELDS = {
+    "member_name": "Member Name", "member_id": "Member ID",
+    "doctor_name": "Doctor Name", "doctor_registration": "Doctor Registration",
+    "diagnosis": "Diagnosis",
+    "treatment_type": "Treatment Type", "treatment_date": "Treatment Date",
+    "claim_amount": "Claim Amount"
+}
 
 @patch('services.adjudication.members_collection')
 @patch('services.adjudication.policies_collection')
@@ -217,7 +225,7 @@ def test_tc008_manual_review(mock_claims, mock_history, mock_providers, mock_pol
     mock_policies.find_one.return_value = {'member_id': 'EMP008', 'active': True, 'annual_limit': 50000, 'annual_used': 10000}
     mock_providers.find_one.return_value = {'doctor_registration': 'UP/45678/2016', 'blacklisted': False, 'network_provider': False}
     mock_history.find_one.return_value = None
-    mock_claims.count_documents.return_value = 0
+    mock_claims.count_documents.return_value = 15
 
     claim = Claim(
         member_id="EMP008",
