@@ -74,7 +74,7 @@ REQUIRED_FIELDS = {
     "bill_date": "Bill Date"
 }
 
-DOCTOR_REG_PATTERN = r"^[A-Z]{2,4}(/[A-Z]{2})?/\d+/\d{4}$"
+DOCTOR_REG_PATTERN = r"^[A-Z]{2,5}(/[A-Z]{2})?/\d+/\d{4}$"
 
 # Document type keywords for OCR detection
 DOCUMENT_TYPE_KEYWORDS = {
